@@ -60,7 +60,6 @@ def submit(args):
         # thread func to run the job
         def run(prog):
             subprocess.check_call(prog, shell = True)
-
         # sync programs if necessary
         local_dir = os.getcwd()+'/'
         working_dir = local_dir
@@ -72,11 +71,11 @@ def submit(args):
             pool.close()
             pool.join()
             
-
         # launch jobs
         for i in range(nworker + nserver):
             pass_envs['DMLC_ROLE'] = 'server' if i < nserver else 'worker'
             (node, port) = hosts[i % len(hosts)]
+            logging.debug("SSH-ing to %s:%s", node, port)
             pass_envs['DMLC_NODE_HOST'] = node
             prog = get_env(pass_envs) + ' cd ' + working_dir + '; ' + (' '.join(args.command))
             prog = 'ssh -o StrictHostKeyChecking=no ' + node + ' -p ' + port + ' \'' + prog + '\''
@@ -84,7 +83,6 @@ def submit(args):
             thread.setDaemon(True)
             thread.start()
 
-        return ssh_submit
 
     tracker.submit(args.num_workers, args.num_servers,
                    fun_submit=ssh_submit,
