@@ -60,6 +60,7 @@ class SlaveEntry(object):
         slave = ExSocket(sock)
         self.sock = slave
         self.host = get_some_ip(s_addr[0])
+        logging.debug("Created SlaveEntry for node: %s" % self.host)
         magic = slave.recvint()
         assert magic == kMagic, 'invalid magic number=%d from %s' % (magic, self.host)
         slave.sendint(kMagic)
