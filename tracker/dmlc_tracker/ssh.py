@@ -60,6 +60,7 @@ def submit(args):
         # thread func to run the job
         def run(prog):
             subprocess.check_call(prog, shell = True)
+
         # sync programs if necessary
         local_dir = os.getcwd()+'/'
         working_dir = local_dir
@@ -71,6 +72,7 @@ def submit(args):
             pool.close()
             pool.join()
             
+
         # launch jobs
         for i in range(nworker + nserver):
             pass_envs['DMLC_ROLE'] = 'server' if i < nserver else 'worker'
