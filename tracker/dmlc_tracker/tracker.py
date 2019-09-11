@@ -139,7 +139,7 @@ class RabitTracker(object):
     """
     tracker for rabit
     """
-    def __init__(self, hostIP, nslave, port=9091, port_end=9094):
+    def __init__(self, hostIP, nslave, port=9091, port_end=9999):
         sock = socket.socket(get_family(hostIP), socket.SOCK_STREAM)
         for port in range(port, port_end):
             try:

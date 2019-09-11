@@ -83,6 +83,7 @@ def submit(args):
             thread.setDaemon(True)
             thread.start()
 
+        return ssh_submit 
 
     tracker.submit(args.num_workers, args.num_servers,
                    fun_submit=ssh_submit,
