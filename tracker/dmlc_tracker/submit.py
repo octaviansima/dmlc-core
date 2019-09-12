@@ -9,6 +9,7 @@ from . import sge
 from . import yarn
 from . import mesos
 from . import kubernetes
+from . import ssh
 
 def config_logger(args):
     """Configure the logger according to the arguments
@@ -52,5 +53,7 @@ def main():
         mesos.submit(args)
     elif args.cluster == 'kubernetes':
         kubernetes.submit(args)
+    elif args.cluster == 'ssh':
+        ssh.submit(args)
     else:
         raise RuntimeError('Unknown submission cluster type %s' % args.cluster)
