@@ -252,7 +252,7 @@ class RabitTracker(object):
                 parent_map_[rmap[k]] = -1
         return tree_map_, parent_map_, ring_map_
 
-    def accept_slaves(self, nslave):
+    def accept_slaves(self, nslave, masterIP=None):
         # set of nodes that finishs the job
         shutdown = {}
         # set of nodes that is waiting for connections
@@ -297,7 +297,13 @@ class RabitTracker(object):
                 assert len(todo_nodes) != 0
                 pending.append(s)
                 if len(pending) == len(todo_nodes):
-                    pending.sort(key=lambda x: x.host)
+                    if masterIP:
+                        master_entry = None
+                        for slave_entry in pending:
+                            if slave_entry.host == masterIP:
+                               master_entry = slave_entry 
+                        if master_entry:
+                            pending.insert(0, pending.pop(pending.index(master_entry)))
                     for s in pending:
                         rank = todo_nodes.pop(0)
                         if s.jobid != 'NULL':
@@ -320,9 +326,9 @@ class RabitTracker(object):
         logging.info('@tracker %s secs between node start and job finish',
                      str(self.end_time - self.start_time))
 
-    def start(self, nslave):
+    def start(self, nslave, masterIP=None):
         def run():
-            self.accept_slaves(nslave)
+            self.accept_slaves(nslave, masterIP)
         self.thread = Thread(target=run, args=())
         self.thread.setDaemon(True)
         self.thread.start()
@@ -419,7 +425,7 @@ def submit(nworker, nserver, fun_submit, hostIP='auto', pscmd=None):
     if nserver == 0:
         rabit = RabitTracker(hostIP=hostIP, nslave=nworker)
         envs.update(rabit.slave_envs())
-        rabit.start(nworker)
+        rabit.start(nworker, hostIP)
         if rabit.alive():
            fun_submit(nworker, nserver, envs)
     else:
