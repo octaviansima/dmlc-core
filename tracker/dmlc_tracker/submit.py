@@ -8,7 +8,6 @@ from . import mpi
 from . import sge
 from . import yarn
 from . import mesos
-from . import kubernetes
 from . import ssh
 
 def config_logger(args):
@@ -51,8 +50,6 @@ def main():
         mpi.submit(args)
     elif args.cluster == 'mesos':
         mesos.submit(args)
-    elif args.cluster == 'kubernetes':
-        kubernetes.submit(args)
     elif args.cluster == 'ssh':
         ssh.submit(args)
     else:
