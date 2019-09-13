@@ -191,6 +191,14 @@ class RabitTracker(object):
             parent_map[r] = (r + 1) // 2 - 1
         return tree_map, parent_map
 
+    def get_star(self, nslave):
+        tree_map = {}
+        parent_map = {}
+        for r in range(nslave):
+            tree_map[r] = [0] if r != 0 else [worker for worker in range(1, nslave)]
+            parent_map[r] = 0 if r != 0 else -1
+        return tree_map, parent_map
+
     def find_share_ring(self, tree_map, parent_map, r):
         """
         get a ring structure that tends to share nodes with the tree
@@ -230,7 +238,7 @@ class RabitTracker(object):
         get the link map, this is a bit hacky, call for better algorithm
         to place similar nodes together
         """
-        tree_map, parent_map = self.get_tree(nslave)
+        tree_map, parent_map = self.get_star(nslave)
         ring_map = self.get_ring(tree_map, parent_map)
         rmap = {0 : 0}
         k = 0
