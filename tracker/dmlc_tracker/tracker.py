@@ -20,6 +20,7 @@ import argparse
 import time
 import logging
 from threading import Thread
+from requests import get
 
 class ExSocket(object):
     """
@@ -180,7 +181,7 @@ class RabitTracker(object):
         get enviroment variables for slaves
         can be passed in as args or envs
         """
-        return {'DMLC_TRACKER_URI': self.hostIP,
+        return {'DMLC_TRACKER_URI': get('https://api.ipify.org').text,
                 'DMLC_TRACKER_PORT': self.port}
 
     def get_tree(self, nslave):
@@ -433,7 +434,9 @@ def submit(nworker, nserver, fun_submit, hostIP='auto', pscmd=None):
     if nserver == 0:
         rabit = RabitTracker(hostIP=hostIP, nslave=nworker)
         envs.update(rabit.slave_envs())
-        rabit.start(nworker, hostIP)
+	
+	masterIP = get('https://api.ipify.org').text
+        rabit.start(nworker, masterIP)
         if rabit.alive():
            fun_submit(nworker, nserver, envs)
     else:
