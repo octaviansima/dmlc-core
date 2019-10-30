@@ -126,8 +126,11 @@
  * \brief Enable std::thread related modules,
  *  Used to disable some module in mingw compile.
  */
+#ifndef __ENCLAVE__
+// FIXME Can we enabe this?
 #ifndef DMLC_ENABLE_STD_THREAD
 #define DMLC_ENABLE_STD_THREAD DMLC_USE_CXX11
+#endif
 #endif
 
 /*! \brief whether enable regex support, actually need g++-4.9 or higher*/

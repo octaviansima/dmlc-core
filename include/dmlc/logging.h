@@ -296,7 +296,11 @@ class DateLogger {
     struct tm *pnow;
 #if !defined(_WIN32)
     struct tm now;
+#ifdef __ENCLAVE__
+    // TODO do this
+#else // __ENCLAVE__
     pnow = localtime_r(&time_value, &now);
+#endif // __ENCLAVE__
 #else
     pnow = localtime(&time_value);  // NOLINT(*)
 #endif
