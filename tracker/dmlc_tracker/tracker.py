@@ -20,6 +20,16 @@ import argparse
 import time
 import logging
 from threading import Thread
+import datetime as dt
+from mbedtls import hash as hashlib
+from mbedtls import pk, x509, tls
+from contextlib import suppress
+
+
+def block(callback, *args, **kwargs):
+    while True:
+        with suppress(tls.WantReadError, tls.WantWriteError):
+            return callback(*args, **kwargs)
 
 class ExSocket(object):
     """
@@ -27,17 +37,20 @@ class ExSocket(object):
     """
     def __init__(self, sock):
         self.sock = sock
+        self.buf = b''
     def recvall(self, nbytes):
-        res = []
-        nread = 0
+        res = self.buf
+        nread = len(self.buf)
         while nread < nbytes:
-            chunk = self.sock.recv(min(nbytes - nread, 1024))
+            chunk = self.sock.recv(65355)
             nread += len(chunk)
-            res.append(chunk)
-        return b''.join(res)
+            res += chunk
+        res, self.buf = res[:nbytes], res[nbytes:]
+        return res
     def recvint(self):
         return struct.unpack('@i', self.recvall(4))[0]
     def sendint(self, n):
+        print(struct.pack('@i', n))
         self.sock.sendall(struct.pack('@i', n))
     def sendstr(self, s):
         self.sendint(len(s))
@@ -82,6 +95,7 @@ class SlaveEntry(object):
         self.rank = rank
         nnset = set(tree_map[rank])
         rprev, rnext = ring_map[rank]
+        # TODO: recv for the worker does not exit after sending the rank here
         self.sock.sendint(rank)
         # send parent rank
         self.sock.sendint(parent_map[rank])
@@ -104,7 +118,9 @@ class SlaveEntry(object):
         else:
             self.sock.sendint(-1)
         while True:
+            # TODO: doesn't recvint here
             ngood = self.sock.recvint()
+            print('passed ngood recvint')
             goodset = set([])
             for _ in range(ngood):
                 goodset.add(self.sock.recvint())
@@ -125,7 +141,7 @@ class SlaveEntry(object):
                 continue
             self.port = self.sock.recvint()
             rmset = []
-            # all connection was successuly setup
+            # all connection was successfully setup
             for r in conset:
                 wait_conn[r].wait_accept -= 1
                 if wait_conn[r].wait_accept == 0:
@@ -141,6 +157,39 @@ class RabitTracker(object):
     """
     def __init__(self, hostIP, nslave, port=9091, port_end=9999):
         sock = socket.socket(get_family(hostIP), socket.SOCK_STREAM)
+
+        now = dt.datetime.utcnow()
+        ca0_key = pk.RSA()
+        _ = ca0_key.generate()
+        ca0_csr = x509.CSR.new(ca0_key, "CN=Trusted CA", hashlib.sha256())
+        ca0_crt = x509.CRT.selfsign(
+            ca0_csr, ca0_key,
+            not_before=now, not_after = now + dt.timedelta(days=90),
+            serial_number=0x123456,
+            basic_constraints=x509.BasicConstraints(True, 1))
+
+        ca1_key = pk.ECC()
+        _ = ca1_key.generate()
+        ca1_csr = x509.CSR.new(ca1_key, "CN=Intermediate CA", hashlib.sha256())
+        ca1_crt = ca0_crt.sign(
+            ca1_csr, ca0_key, now, now + dt.timedelta(days=90), 0x123456,
+            basic_constraints=x509.BasicConstraints(ca=True, max_path_length=3))
+
+        ee0_key = pk.ECC()
+        _ = ee0_key.generate()
+        ee0_csr = x509.CSR.new(ee0_key, "CN=End Entity", hashlib.sha256())
+        ee0_crt = ca1_crt.sign(ee0_csr, ca1_key, now, now + dt.timedelta(days=90), 0x987654)
+
+        trust_store = tls.TrustStore()
+        trust_store.add(ca0_crt)
+
+        tls_srv_ctx = tls.ServerContext(tls.TLSConfiguration(
+            trust_store=trust_store,
+            certificate_chain=([ee0_crt, ca1_crt], ee0_key),
+            validate_certificates=False))
+
+        sock = tls_srv_ctx.wrap_socket(sock)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 2)
         for port in range(port, port_end):
             try:
                 sock.bind((hostIP, port))
@@ -159,6 +208,7 @@ class RabitTracker(object):
         self.end_time = None
         self.nslave = nslave
         logging.info('start listen on %s:%d', hostIP, self.port)
+
 
     def __del__(self):
         self.sock.close()
@@ -274,6 +324,7 @@ class RabitTracker(object):
 
         while len(shutdown) != nslave:
             fd, s_addr = self.sock.accept()
+            fd.do_handshake()
             s = SlaveEntry(fd, s_addr)
             if s.cmd == 'print':
                 msg = s.sock.recvstr()
@@ -309,7 +360,7 @@ class RabitTracker(object):
                         master_entry = None
                         for slave_entry in pending:
                             if slave_entry.host == masterIP:
-                               master_entry = slave_entry 
+                               master_entry = slave_entry
                         if master_entry:
                             pending.insert(0, pending.pop(pending.index(master_entry)))
                     for s in pending:
@@ -319,7 +370,7 @@ class RabitTracker(object):
                         s.assign_rank(rank, wait_conn, tree_map, parent_map, ring_map)
                         if s.wait_accept > 0:
                             wait_conn[rank] = s
-                        logging.debug('Recieve %s signal from %s; assign rank %d',
+                        logging.info('Recieve %s signal from %s; assign rank %d',
                                       s.cmd, s.host, s.rank)
                 if len(todo_nodes) == 0:
                     logging.info('@tracker All of %d nodes getting started', nslave)
@@ -333,6 +384,7 @@ class RabitTracker(object):
         self.end_time = time.time()
         logging.info('@tracker %s secs between node start and job finish',
                      str(self.end_time - self.start_time))
+
 
     def start(self, nslave, masterIP=None):
         def run():
@@ -362,6 +414,15 @@ class PSTracker(object):
         envs = {} if envs is None else envs
         self.hostIP = hostIP
         sock = socket.socket(get_family(hostIP), socket.SOCK_STREAM)
+
+        trust_store = tls.TrustStore()
+        tls_srv_ctx = tls.ServerContext(tls.TLSConfiguration(
+            trust_store=trust_store,
+            certificate_chain=(),
+            validate_certificates=False))
+
+        sock = tls_srv_ctx.wrap_socket(sock)
+
         for port in range(port, port_end):
             try:
                 sock.bind(('', port))
@@ -413,7 +474,7 @@ def get_host_ip(hostIP=None):
             hostIP = socket.gethostbyname(socket.getfqdn())
         except gaierror:
             logging.warn('gethostbyname(socket.getfqdn()) failed... trying on hostname()')
-            hostIP = socket.gethostbyname(socket.gethostname())
+            hostIP = socket.gethostbyname('')
         if hostIP.startswith("127."):
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             # doesn't have to be reachable
